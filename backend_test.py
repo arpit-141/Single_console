@@ -69,8 +69,61 @@ class UnifiedSecurityConsoleAPITester:
             self.log_test("Dashboard Stats", False, str(e))
             return False, {}
 
+    def test_app_templates(self):
+        """Test new app templates endpoints"""
+        # Test GET all app templates
+        try:
+            response = requests.get(f"{self.api_url}/app-templates", headers=self.headers, timeout=10)
+            success = response.status_code == 200
+            
+            if success:
+                templates = response.json()
+                expected_types = ["DefectDojo", "TheHive", "OpenSearch", "Wazuh", "Suricata", 
+                                "Elastic", "Splunk", "MISP", "Cortex", "Custom"]
+                
+                found_types = list(templates.keys())
+                missing_types = [t for t in expected_types if t not in found_types]
+                
+                if not missing_types:
+                    details = f"All {len(expected_types)} app types found"
+                else:
+                    details = f"Missing types: {missing_types}"
+                    success = False
+            else:
+                details = f"Status code: {response.status_code}"
+                
+            self.log_test("Get App Templates", success, details)
+        except Exception as e:
+            self.log_test("Get App Templates", False, str(e))
+            success = False
+
+        # Test GET specific app template
+        try:
+            response = requests.get(f"{self.api_url}/app-templates/DefectDojo", headers=self.headers, timeout=10)
+            specific_success = response.status_code == 200
+            
+            if specific_success:
+                template = response.json()
+                required_fields = ["name", "default_port", "description", "auth_type"]
+                missing_fields = [f for f in required_fields if f not in template]
+                
+                if not missing_fields:
+                    details = f"DefectDojo template complete: {template.get('name')}, port {template.get('default_port')}"
+                else:
+                    details = f"Missing fields: {missing_fields}"
+                    specific_success = False
+            else:
+                details = f"Status code: {response.status_code}"
+                
+            self.log_test("Get Specific App Template", specific_success, details)
+        except Exception as e:
+            self.log_test("Get Specific App Template", False, str(e))
+            specific_success = False
+
+        return success and specific_success
+
     def test_applications_crud(self):
-        """Test applications CRUD operations"""
+        """Test applications CRUD operations with app_type field"""
         # Test GET applications
         try:
             response = requests.get(f"{self.api_url}/applications", headers=self.headers, timeout=10)
@@ -82,13 +135,15 @@ class UnifiedSecurityConsoleAPITester:
             get_success = False
             apps_data = []
 
-        # Test POST application (create)
+        # Test POST application (create) with app_type
         test_app = {
-            "app_name": "Test Security App",
+            "app_name": "Test DefectDojo App",
+            "app_type": "DefectDojo",
             "module": "XDR",
             "redirect_url": "https://example.com/test-app",
-            "description": "Test application for API testing",
+            "description": "Test DefectDojo application for API testing",
             "ip": "192.168.1.100",
+            "default_port": 8080,
             "username": "testuser",
             "password": "testpass123",
             "api_key": "test-api-key-123"
