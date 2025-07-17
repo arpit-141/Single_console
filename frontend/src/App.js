@@ -181,6 +181,7 @@ const AdminPanel = () => {
   const [applications, setApplications] = useState([]);
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
+  const [appTemplates, setAppTemplates] = useState({});
   const [showAddApp, setShowAddApp] = useState(false);
   const [showAddUser, setShowAddUser] = useState(false);
   const [defectDojoUsers, setDefectDojoUsers] = useState([]);
@@ -188,13 +189,15 @@ const AdminPanel = () => {
 
   const [newApp, setNewApp] = useState({
     app_name: '',
+    app_type: 'DefectDojo',
     module: 'XDR',
     redirect_url: '',
     description: '',
     ip: '',
     username: '',
     password: '',
-    api_key: ''
+    api_key: '',
+    default_port: 8080
   });
 
   const [newUser, setNewUser] = useState({
@@ -209,7 +212,17 @@ const AdminPanel = () => {
 
   useEffect(() => {
     fetchData();
+    fetchAppTemplates();
   }, []);
+
+  const fetchAppTemplates = async () => {
+    try {
+      const response = await axios.get(`${API}/app-templates`);
+      setAppTemplates(response.data);
+    } catch (error) {
+      console.error('Error fetching app templates:', error);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -231,19 +244,34 @@ const AdminPanel = () => {
     }
   };
 
+  const handleAppTypeChange = (appType) => {
+    const template = appTemplates[appType];
+    if (template) {
+      setNewApp(prev => ({
+        ...prev,
+        app_type: appType,
+        app_name: template.name,
+        description: template.description,
+        default_port: template.default_port
+      }));
+    }
+  };
+
   const handleAddApp = async (e) => {
     e.preventDefault();
     try {
       await axios.post(`${API}/applications`, newApp);
       setNewApp({
         app_name: '',
+        app_type: 'DefectDojo',
         module: 'XDR',
         redirect_url: '',
         description: '',
         ip: '',
         username: '',
         password: '',
-        api_key: ''
+        api_key: '',
+        default_port: 8080
       });
       setShowAddApp(false);
       fetchData();
