@@ -385,6 +385,10 @@ class UnifiedSecurityConsoleAPITester:
         self.test_health_check()
         self.test_dashboard_stats()
         
+        # Test new app templates feature
+        print("\n🎯 New App Templates Feature Tests:")
+        self.test_app_templates()
+        
         # Test CRUD operations
         print("\n📝 CRUD Operations Tests:")
         self.test_applications_crud()
