@@ -137,7 +137,79 @@ class DefectDojoRole(BaseModel):
     role_id: int
     product_id: Optional[int] = None
 
-# Helper functions
+# Application Templates
+APP_TEMPLATES = {
+    AppType.DEFECTDOJO: {
+        "name": "DefectDojo",
+        "default_port": 8080,
+        "description": "Open source vulnerability management tool",
+        "auth_type": "api_key",
+        "api_endpoints": ["/api/v2/users/", "/api/v2/roles/", "/api/v2/findings/"]
+    },
+    AppType.THEHIVE: {
+        "name": "TheHive",
+        "default_port": 9000,
+        "description": "Security incident response platform",
+        "auth_type": "api_key",
+        "api_endpoints": ["/api/user", "/api/case", "/api/alert"]
+    },
+    AppType.OPENSEARCH: {
+        "name": "OpenSearch",
+        "default_port": 9200,
+        "description": "Distributed search and analytics engine",
+        "auth_type": "basic",
+        "api_endpoints": ["/_security/user", "/_security/role", "/_cluster/health"]
+    },
+    AppType.WAZUH: {
+        "name": "Wazuh",
+        "default_port": 55000,
+        "description": "Open source security monitoring",
+        "auth_type": "basic",
+        "api_endpoints": ["/security/users", "/security/roles", "/agents"]
+    },
+    AppType.SURICATA: {
+        "name": "Suricata",
+        "default_port": 8080,
+        "description": "Network threat detection engine",
+        "auth_type": "none",
+        "api_endpoints": ["/rules", "/alerts", "/stats"]
+    },
+    AppType.ELASTIC: {
+        "name": "Elastic",
+        "default_port": 9200,
+        "description": "Elasticsearch cluster",
+        "auth_type": "basic",
+        "api_endpoints": ["/_security/user", "/_security/role", "/_cluster/health"]
+    },
+    AppType.SPLUNK: {
+        "name": "Splunk",
+        "default_port": 8089,
+        "description": "Data platform for security monitoring",
+        "auth_type": "basic",
+        "api_endpoints": ["/services/authentication/users", "/services/authorization/roles"]
+    },
+    AppType.MISP: {
+        "name": "MISP",
+        "default_port": 443,
+        "description": "Malware information sharing platform",
+        "auth_type": "api_key",
+        "api_endpoints": ["/users", "/roles", "/events"]
+    },
+    AppType.CORTEX: {
+        "name": "Cortex",
+        "default_port": 9001,
+        "description": "Observable analysis and response engine",
+        "auth_type": "api_key",
+        "api_endpoints": ["/api/user", "/api/analyzer", "/api/job"]
+    },
+    AppType.CUSTOM: {
+        "name": "Custom Application",
+        "default_port": 8080,
+        "description": "Custom security application",
+        "auth_type": "custom",
+        "api_endpoints": []
+    }
+}
 def encrypt_data(data: str) -> str:
     """Encrypt sensitive data"""
     return cipher_suite.encrypt(data.encode()).decode()
