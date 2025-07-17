@@ -61,6 +61,7 @@ class AppType(str, Enum):
 class Application(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     app_name: str
+    app_type: AppType
     module: ModuleType
     redirect_url: str
     ip: Optional[str] = None
@@ -68,11 +69,13 @@ class Application(BaseModel):
     password: Optional[str] = None
     api_key: Optional[str] = None
     description: Optional[str] = None
+    default_port: Optional[int] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
     updated_at: datetime = Field(default_factory=datetime.utcnow)
 
 class ApplicationCreate(BaseModel):
     app_name: str
+    app_type: AppType
     module: ModuleType
     redirect_url: str
     ip: Optional[str] = None
@@ -80,9 +83,11 @@ class ApplicationCreate(BaseModel):
     password: Optional[str] = None
     api_key: Optional[str] = None
     description: Optional[str] = None
+    default_port: Optional[int] = None
 
 class ApplicationUpdate(BaseModel):
     app_name: Optional[str] = None
+    app_type: Optional[AppType] = None
     module: Optional[ModuleType] = None
     redirect_url: Optional[str] = None
     ip: Optional[str] = None
@@ -90,6 +95,7 @@ class ApplicationUpdate(BaseModel):
     password: Optional[str] = None
     api_key: Optional[str] = None
     description: Optional[str] = None
+    default_port: Optional[int] = None
 
 class User(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
