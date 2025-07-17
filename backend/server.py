@@ -359,6 +359,27 @@ async def delete_application(app_id: str, current_user: dict = Depends(get_curre
         raise HTTPException(status_code=404, detail="Application not found")
     return {"message": "Application deleted successfully"}
 
+# Application Templates and Helper Routes
+@api_router.get("/app-templates")
+async def get_app_templates():
+    """Get available application templates"""
+    templates = {}
+    for app_type, template in APP_TEMPLATES.items():
+        templates[app_type] = {
+            "name": template["name"],
+            "default_port": template["default_port"],
+            "description": template["description"],
+            "auth_type": template["auth_type"]
+        }
+    return templates
+
+@api_router.get("/app-templates/{app_type}")
+async def get_app_template(app_type: AppType):
+    """Get specific application template"""
+    if app_type not in APP_TEMPLATES:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return APP_TEMPLATES[app_type]
+
 # User Management Routes
 @api_router.get("/users", response_model=List[User])
 async def get_users():
