@@ -58,9 +58,19 @@ const ModuleCard = ({ module, applications, onAppClick }) => {
               onClick={() => onAppClick(app)}
             >
               <div className="flex justify-between items-center">
-                <div>
-                  <h4 className="font-medium">{app.app_name}</h4>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <h4 className="font-medium">{app.app_name}</h4>
+                    <span className="bg-green-100 text-green-800 px-2 py-1 rounded text-xs">
+                      {app.app_type}
+                    </span>
+                  </div>
                   <p className="text-sm text-gray-600">{app.description || 'No description'}</p>
+                  {app.ip && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      {app.ip}:{app.default_port || 8080}
+                    </p>
+                  )}
                 </div>
                 <div className="text-right">
                   <span className="text-blue-500 hover:text-blue-700">
