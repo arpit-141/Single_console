@@ -155,29 +155,49 @@ class UnifiedSecurityConsoleAPITester:
             post_success = response.status_code == 200
             created_app = response.json() if post_success else {}
             app_id = created_app.get('id') if post_success else None
-            self.log_test("Create Application", post_success, 
-                         f"Created app with ID: {app_id}" if app_id else f"Status: {response.status_code}")
+            
+            # Verify app_type was saved correctly
+            if post_success and created_app.get('app_type') == 'DefectDojo':
+                details = f"Created DefectDojo app with ID: {app_id}"
+            elif post_success:
+                details = f"Created app but app_type incorrect: {created_app.get('app_type')}"
+                post_success = False
+            else:
+                details = f"Status: {response.status_code}"
+                
+            self.log_test("Create Application with App Type", post_success, details)
         except Exception as e:
-            self.log_test("Create Application", False, str(e))
+            self.log_test("Create Application with App Type", False, str(e))
             post_success = False
             app_id = None
 
-        # Test PUT application (update) if we created one
+        # Test PUT application (update) with app_type change
         if post_success and app_id:
             update_data = {
-                "description": "Updated test application description"
+                "description": "Updated test application description",
+                "app_type": "TheHive"
             }
             try:
                 response = requests.put(f"{self.api_url}/applications/{app_id}", 
                                       json=update_data, headers=self.headers, timeout=10)
                 put_success = response.status_code == 200
-                self.log_test("Update Application", put_success, 
-                             f"Updated app {app_id}" if put_success else f"Status: {response.status_code}")
+                
+                if put_success:
+                    updated_app = response.json()
+                    if updated_app.get('app_type') == 'TheHive':
+                        details = f"Updated app {app_id} to TheHive type"
+                    else:
+                        details = f"App type not updated correctly: {updated_app.get('app_type')}"
+                        put_success = False
+                else:
+                    details = f"Status: {response.status_code}"
+                    
+                self.log_test("Update Application App Type", put_success, details)
             except Exception as e:
-                self.log_test("Update Application", False, str(e))
+                self.log_test("Update Application App Type", False, str(e))
                 put_success = False
         else:
-            self.log_test("Update Application", False, "No app ID to update")
+            self.log_test("Update Application App Type", False, "No app ID to update")
             put_success = False
 
         # Test DELETE application if we created one
