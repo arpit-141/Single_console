@@ -46,6 +46,18 @@ class ModuleType(str, Enum):
     OXDR = "OXDR"
     GSOS = "GSOS"
 
+class AppType(str, Enum):
+    DEFECTDOJO = "DefectDojo"
+    THEHIVE = "TheHive"
+    OPENSEARCH = "OpenSearch"
+    WAZUH = "Wazuh"
+    SURICATA = "Suricata"
+    ELASTIC = "Elastic"
+    SPLUNK = "Splunk"
+    MISP = "MISP"
+    CORTEX = "Cortex"
+    CUSTOM = "Custom"
+
 class Application(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     app_name: str
