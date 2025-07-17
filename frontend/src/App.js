@@ -475,73 +475,151 @@ const AdminPanel = () => {
       {/* Add Application Modal */}
       {showAddApp && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-bold mb-4">Add New Application</h3>
             <form onSubmit={handleAddApp}>
               <div className="space-y-4">
-                <input
-                  type="text"
-                  placeholder="Application Name"
-                  value={newApp.app_name}
-                  onChange={(e) => setNewApp({...newApp, app_name: e.target.value})}
-                  className="w-full p-2 border rounded"
-                  required
-                />
-                <select
-                  value={newApp.module}
-                  onChange={(e) => setNewApp({...newApp, module: e.target.value})}
-                  className="w-full p-2 border rounded"
-                  required
-                >
-                  <option value="XDR">XDR</option>
-                  <option value="XDR+">XDR+</option>
-                  <option value="OXDR">OXDR</option>
-                  <option value="GSOS">GSOS</option>
-                </select>
-                <input
-                  type="url"
-                  placeholder="Redirect URL"
-                  value={newApp.redirect_url}
-                  onChange={(e) => setNewApp({...newApp, redirect_url: e.target.value})}
-                  className="w-full p-2 border rounded"
-                  required
-                />
-                <textarea
-                  placeholder="Description"
-                  value={newApp.description}
-                  onChange={(e) => setNewApp({...newApp, description: e.target.value})}
-                  className="w-full p-2 border rounded"
-                  rows="2"
-                />
-                <input
-                  type="text"
-                  placeholder="IP Address (optional)"
-                  value={newApp.ip}
-                  onChange={(e) => setNewApp({...newApp, ip: e.target.value})}
-                  className="w-full p-2 border rounded"
-                />
-                <input
-                  type="text"
-                  placeholder="Username (optional)"
-                  value={newApp.username}
-                  onChange={(e) => setNewApp({...newApp, username: e.target.value})}
-                  className="w-full p-2 border rounded"
-                />
-                <input
-                  type="password"
-                  placeholder="Password (optional)"
-                  value={newApp.password}
-                  onChange={(e) => setNewApp({...newApp, password: e.target.value})}
-                  className="w-full p-2 border rounded"
-                />
-                <input
-                  type="text"
-                  placeholder="API Key (optional)"
-                  value={newApp.api_key}
-                  onChange={(e) => setNewApp({...newApp, api_key: e.target.value})}
-                  className="w-full p-2 border rounded"
-                />
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Module</label>
+                  <select
+                    value={newApp.module}
+                    onChange={(e) => setNewApp({...newApp, module: e.target.value})}
+                    className="w-full p-2 border rounded"
+                    required
+                  >
+                    <option value="XDR">XDR</option>
+                    <option value="XDR+">XDR+</option>
+                    <option value="OXDR">OXDR</option>
+                    <option value="GSOS">GSOS</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Application Type</label>
+                  <select
+                    value={newApp.app_type}
+                    onChange={(e) => handleAppTypeChange(e.target.value)}
+                    className="w-full p-2 border rounded"
+                    required
+                  >
+                    <option value="DefectDojo">DefectDojo</option>
+                    <option value="TheHive">TheHive</option>
+                    <option value="OpenSearch">OpenSearch</option>
+                    <option value="Wazuh">Wazuh</option>
+                    <option value="Suricata">Suricata</option>
+                    <option value="Elastic">Elastic</option>
+                    <option value="Splunk">Splunk</option>
+                    <option value="MISP">MISP</option>
+                    <option value="Cortex">Cortex</option>
+                    <option value="Custom">Custom</option>
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Application Name</label>
+                  <input
+                    type="text"
+                    placeholder="Application Name"
+                    value={newApp.app_name}
+                    onChange={(e) => setNewApp({...newApp, app_name: e.target.value})}
+                    className="w-full p-2 border rounded"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Redirect URL</label>
+                  <input
+                    type="url"
+                    placeholder="https://your-app.com"
+                    value={newApp.redirect_url}
+                    onChange={(e) => setNewApp({...newApp, redirect_url: e.target.value})}
+                    className="w-full p-2 border rounded"
+                    required
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                  <textarea
+                    placeholder="Application description"
+                    value={newApp.description}
+                    onChange={(e) => setNewApp({...newApp, description: e.target.value})}
+                    className="w-full p-2 border rounded"
+                    rows="2"
+                  />
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">IP Address</label>
+                    <input
+                      type="text"
+                      placeholder="192.168.1.100"
+                      value={newApp.ip}
+                      onChange={(e) => setNewApp({...newApp, ip: e.target.value})}
+                      className="w-full p-2 border rounded"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Port</label>
+                    <input
+                      type="number"
+                      placeholder="8080"
+                      value={newApp.default_port}
+                      onChange={(e) => setNewApp({...newApp, default_port: parseInt(e.target.value) || 8080})}
+                      className="w-full p-2 border rounded"
+                    />
+                  </div>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                  <input
+                    type="text"
+                    placeholder="Username (optional)"
+                    value={newApp.username}
+                    onChange={(e) => setNewApp({...newApp, username: e.target.value})}
+                    className="w-full p-2 border rounded"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                  <input
+                    type="password"
+                    placeholder="Password (optional)"
+                    value={newApp.password}
+                    onChange={(e) => setNewApp({...newApp, password: e.target.value})}
+                    className="w-full p-2 border rounded"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
+                  <input
+                    type="text"
+                    placeholder="API Key (optional)"
+                    value={newApp.api_key}
+                    onChange={(e) => setNewApp({...newApp, api_key: e.target.value})}
+                    className="w-full p-2 border rounded"
+                  />
+                </div>
+                
+                {/* Show template info */}
+                {appTemplates[newApp.app_type] && (
+                  <div className="bg-blue-50 p-3 rounded">
+                    <p className="text-sm text-blue-800">
+                      <strong>Template Info:</strong> {appTemplates[newApp.app_type].description}
+                    </p>
+                    <p className="text-sm text-blue-600">
+                      Default Port: {appTemplates[newApp.app_type].default_port} | 
+                      Auth: {appTemplates[newApp.app_type].auth_type}
+                    </p>
+                  </div>
+                )}
               </div>
+              
               <div className="flex justify-end space-x-2 mt-6">
                 <button
                   type="button"
