@@ -257,7 +257,11 @@ class UnifiedSecurityConsoleAPITester:
             return False, {}
 
     def test_app_templates(self):
-        """Test new app templates endpoints"""
+        """Test application templates system"""
+        if not self.auth_token:
+            self.log_test("App Templates", False, "No auth token available")
+            return False
+            
         # Test GET all app templates
         try:
             response = requests.get(f"{self.api_url}/app-templates", headers=self.headers, timeout=10)
@@ -268,13 +272,13 @@ class UnifiedSecurityConsoleAPITester:
                 expected_types = ["DefectDojo", "TheHive", "OpenSearch", "Wazuh", "Suricata", 
                                 "Elastic", "Splunk", "MISP", "Cortex", "Custom"]
                 
-                found_types = list(templates.keys())
+                found_types = [template_data.get('name') for template_data in templates.values()]
                 missing_types = [t for t in expected_types if t not in found_types]
                 
                 if not missing_types:
-                    details = f"All {len(expected_types)} app types found"
+                    details = f"All {len(expected_types)} app templates found"
                 else:
-                    details = f"Missing types: {missing_types}"
+                    details = f"Missing templates: {missing_types}"
                     success = False
             else:
                 details = f"Status code: {response.status_code}"
@@ -291,11 +295,11 @@ class UnifiedSecurityConsoleAPITester:
             
             if specific_success:
                 template = response.json()
-                required_fields = ["name", "default_port", "description", "auth_type"]
+                required_fields = ["name", "default_port", "description", "auth_type", "supports_role_sync"]
                 missing_fields = [f for f in required_fields if f not in template]
                 
                 if not missing_fields:
-                    details = f"DefectDojo template complete: {template.get('name')}, port {template.get('default_port')}"
+                    details = f"DefectDojo template complete: {template.get('name')}, port {template.get('default_port')}, role sync: {template.get('supports_role_sync')}"
                 else:
                     details = f"Missing fields: {missing_fields}"
                     specific_success = False
