@@ -540,54 +540,106 @@ class UnifiedSecurityConsoleAPITester:
 
         return get_success and post_success
 
-    def test_defectdojo_integration(self):
-        """Test DefectDojo API integration"""
-        # Test GET DefectDojo users
+    def test_role_sync_framework(self):
+        """Test generic role synchronization framework"""
+        if not self.auth_token:
+            self.log_test("Role Sync Framework", False, "No auth token available")
+            return False
+            
+        # First, get applications to find one that supports role sync
         try:
-            response = requests.get(f"{self.api_url}/defectdojo/users", headers=self.headers, timeout=15)
-            users_success = response.status_code == 200
-            if users_success:
-                data = response.json()
-                user_count = len(data.get('results', []))
-                details = f"Found {user_count} DefectDojo users"
-            else:
-                details = f"Status code: {response.status_code}"
-            self.log_test("DefectDojo Users", users_success, details)
-        except Exception as e:
-            self.log_test("DefectDojo Users", False, str(e))
-            users_success = False
-
-        # Test GET DefectDojo roles
-        try:
-            response = requests.get(f"{self.api_url}/defectdojo/roles", headers=self.headers, timeout=15)
-            roles_success = response.status_code == 200
-            if roles_success:
-                data = response.json()
-                role_count = len(data.get('results', []))
-                details = f"Found {role_count} DefectDojo roles"
-            else:
-                details = f"Status code: {response.status_code}"
-            self.log_test("DefectDojo Roles", roles_success, details)
-        except Exception as e:
-            self.log_test("DefectDojo Roles", False, str(e))
-            roles_success = False
-
-        # Test DefectDojo roles sync
-        try:
-            response = requests.post(f"{self.api_url}/defectdojo/sync-roles", 
-                                   headers=self.headers, timeout=15)
-            sync_success = response.status_code == 200
+            response = requests.get(f"{self.api_url}/applications", headers=self.headers, timeout=10)
+            if response.status_code != 200:
+                self.log_test("Role Sync Framework", False, "Could not get applications list")
+                return False
+                
+            apps = response.json()
+            defectdojo_app = None
+            
+            # Look for DefectDojo app or create one for testing
+            for app in apps:
+                if app.get('app_type') == 'DefectDojo':
+                    defectdojo_app = app
+                    break
+            
+            if not defectdojo_app:
+                # Create a test DefectDojo app for role sync testing
+                test_app = {
+                    "app_name": "Test DefectDojo for Role Sync",
+                    "app_type": "DefectDojo",
+                    "module": "XDR",
+                    "redirect_url": "https://demo.defectdojo.org",
+                    "description": "Test DefectDojo for role synchronization",
+                    "api_key": "test-api-key-for-sync",
+                    "sync_roles": True
+                }
+                
+                create_response = requests.post(f"{self.api_url}/applications", 
+                                              json=test_app, headers=self.headers, timeout=10)
+                if create_response.status_code == 200:
+                    defectdojo_app = create_response.json()
+                else:
+                    self.log_test("Role Sync Framework", False, "Could not create test DefectDojo app")
+                    return False
+            
+            app_id = defectdojo_app.get('id')
+            
+            # Test role synchronization
+            sync_response = requests.post(f"{self.api_url}/applications/{app_id}/sync-roles", 
+                                        headers=self.headers, timeout=15)
+            sync_success = sync_response.status_code == 200
+            
             if sync_success:
-                data = response.json()
-                details = data.get('message', 'Sync completed')
+                sync_data = sync_response.json()
+                synced_count = sync_data.get('synced_roles', 0)
+                success_flag = sync_data.get('success', False)
+                message = sync_data.get('message', '')
+                
+                if success_flag:
+                    details = f"Role sync successful: {synced_count} roles synced, message: {message}"
+                else:
+                    details = f"Role sync completed but reported failure: {message}"
+                    # This might be expected if external service is not available
             else:
-                details = f"Status code: {response.status_code}"
-            self.log_test("DefectDojo Sync Roles", sync_success, details)
+                details = f"Status: {sync_response.status_code}, Response: {sync_response.text}"
+                
+            self.log_test("DefectDojo Role Synchronization", sync_success, details)
+            
+            # Test role sync for unsupported app type
+            unsupported_app = {
+                "app_name": "Test Suricata No Sync",
+                "app_type": "Suricata",
+                "module": "XDR",
+                "redirect_url": "https://example.com/suricata",
+                "description": "Test Suricata (no role sync support)",
+                "sync_roles": False
+            }
+            
+            create_response = requests.post(f"{self.api_url}/applications", 
+                                          json=unsupported_app, headers=self.headers, timeout=10)
+            if create_response.status_code == 200:
+                unsupported_app_data = create_response.json()
+                unsupported_id = unsupported_app_data.get('id')
+                
+                # Try to sync roles for unsupported app
+                unsupported_sync = requests.post(f"{self.api_url}/applications/{unsupported_id}/sync-roles", 
+                                               headers=self.headers, timeout=10)
+                unsupported_success = unsupported_sync.status_code == 400  # Should fail
+                
+                # Clean up
+                requests.delete(f"{self.api_url}/applications/{unsupported_id}", headers=self.headers)
+                
+                self.log_test("Unsupported App Role Sync Rejection", unsupported_success, 
+                             "Correctly rejected role sync for unsupported app" if unsupported_success else f"Status: {unsupported_sync.status_code}")
+            else:
+                self.log_test("Unsupported App Role Sync Rejection", False, "Could not create test unsupported app")
+                unsupported_success = False
+            
+            return sync_success and unsupported_success
+            
         except Exception as e:
-            self.log_test("DefectDojo Sync Roles", False, str(e))
-            sync_success = False
-
-        return users_success and roles_success and sync_success
+            self.log_test("Role Sync Framework", False, str(e))
+            return False
 
     def test_applications_by_module(self):
         """Test getting applications by module"""
