@@ -33,6 +33,193 @@ class UnifiedSecurityConsoleAPITester:
             'details': details
         })
 
+    def set_auth_token(self, token: str):
+        """Set authentication token for subsequent requests"""
+        self.auth_token = token
+        self.headers['Authorization'] = f'Bearer {token}'
+
+    def test_auth_config(self):
+        """Test authentication configuration endpoint"""
+        try:
+            response = requests.get(f"{self.api_url}/auth/config", headers={'Content-Type': 'application/json'}, timeout=10)
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                auth_type = data.get('auth_type')
+                simple_enabled = data.get('simple_auth_enabled')
+                details = f"Auth type: {auth_type}, Simple auth: {simple_enabled}"
+            else:
+                details = f"Status code: {response.status_code}"
+                
+            self.log_test("Auth Configuration", success, details)
+            return success, response.json() if success else {}
+        except Exception as e:
+            self.log_test("Auth Configuration", False, str(e))
+            return False, {}
+
+    def test_login_authentication(self):
+        """Test JWT authentication system with default admin credentials"""
+        # Test login with correct credentials
+        login_data = {
+            "username": "admin",
+            "password": "admin123"
+        }
+        
+        try:
+            response = requests.post(f"{self.api_url}/auth/login", 
+                                   json=login_data, 
+                                   headers={'Content-Type': 'application/json'}, 
+                                   timeout=10)
+            success = response.status_code == 200
+            
+            if success:
+                data = response.json()
+                token = data.get('access_token')
+                user = data.get('user', {})
+                
+                if token and user.get('username') == 'admin':
+                    self.set_auth_token(token)
+                    details = f"Login successful, admin user authenticated, token received"
+                else:
+                    success = False
+                    details = f"Login response missing token or user data"
+            else:
+                details = f"Status code: {response.status_code}, Response: {response.text}"
+                
+            self.log_test("JWT Login Authentication", success, details)
+            
+            # Test login with wrong credentials
+            wrong_login = {
+                "username": "admin",
+                "password": "wrongpassword"
+            }
+            
+            response = requests.post(f"{self.api_url}/auth/login", 
+                                   json=wrong_login, 
+                                   headers={'Content-Type': 'application/json'}, 
+                                   timeout=10)
+            wrong_success = response.status_code == 401
+            self.log_test("JWT Login Wrong Password", wrong_success, 
+                         "Correctly rejected wrong password" if wrong_success else f"Status: {response.status_code}")
+            
+            return success and wrong_success
+            
+        except Exception as e:
+            self.log_test("JWT Login Authentication", False, str(e))
+            return False
+
+    def test_token_validation(self):
+        """Test JWT token validation for protected endpoints"""
+        if not self.auth_token:
+            self.log_test("Token Validation", False, "No auth token available")
+            return False
+            
+        try:
+            # Test /auth/me endpoint with valid token
+            response = requests.get(f"{self.api_url}/auth/me", headers=self.headers, timeout=10)
+            success = response.status_code == 200
+            
+            if success:
+                user_data = response.json()
+                if user_data.get('username') == 'admin':
+                    details = f"Token validated, user: {user_data.get('username')}"
+                else:
+                    success = False
+                    details = f"Token valid but wrong user: {user_data.get('username')}"
+            else:
+                details = f"Status code: {response.status_code}"
+                
+            self.log_test("JWT Token Validation", success, details)
+            
+            # Test with invalid token
+            invalid_headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer invalid-token'}
+            response = requests.get(f"{self.api_url}/auth/me", headers=invalid_headers, timeout=10)
+            invalid_success = response.status_code == 401
+            self.log_test("JWT Invalid Token Rejection", invalid_success, 
+                         "Correctly rejected invalid token" if invalid_success else f"Status: {response.status_code}")
+            
+            return success and invalid_success
+            
+        except Exception as e:
+            self.log_test("JWT Token Validation", False, str(e))
+            return False
+
+    def test_password_change(self):
+        """Test password change functionality"""
+        if not self.auth_token:
+            self.log_test("Password Change", False, "No auth token available")
+            return False
+            
+        try:
+            # Test password change with correct current password
+            change_data = {
+                "current_password": "admin123",
+                "new_password": "newadmin123"
+            }
+            
+            response = requests.post(f"{self.api_url}/auth/change-password", 
+                                   json=change_data, headers=self.headers, timeout=10)
+            success = response.status_code == 200
+            
+            if success:
+                # Test login with new password
+                login_data = {"username": "admin", "password": "newadmin123"}
+                login_response = requests.post(f"{self.api_url}/auth/login", 
+                                             json=login_data, 
+                                             headers={'Content-Type': 'application/json'}, 
+                                             timeout=10)
+                new_login_success = login_response.status_code == 200
+                
+                if new_login_success:
+                    # Update token
+                    new_data = login_response.json()
+                    self.set_auth_token(new_data.get('access_token'))
+                    
+                    # Change password back to original
+                    revert_data = {
+                        "current_password": "newadmin123",
+                        "new_password": "admin123"
+                    }
+                    requests.post(f"{self.api_url}/auth/change-password", 
+                                json=revert_data, headers=self.headers, timeout=10)
+                    
+                    # Update token again with original password
+                    original_login = {"username": "admin", "password": "admin123"}
+                    original_response = requests.post(f"{self.api_url}/auth/login", 
+                                                    json=original_login, 
+                                                    headers={'Content-Type': 'application/json'}, 
+                                                    timeout=10)
+                    if original_response.status_code == 200:
+                        self.set_auth_token(original_response.json().get('access_token'))
+                    
+                    details = "Password change and revert successful"
+                else:
+                    success = False
+                    details = "Password changed but new login failed"
+            else:
+                details = f"Status code: {response.status_code}"
+                
+            self.log_test("Password Change Functionality", success, details)
+            
+            # Test password change with wrong current password
+            wrong_change = {
+                "current_password": "wrongpassword",
+                "new_password": "newpassword"
+            }
+            
+            response = requests.post(f"{self.api_url}/auth/change-password", 
+                                   json=wrong_change, headers=self.headers, timeout=10)
+            wrong_success = response.status_code == 400
+            self.log_test("Password Change Wrong Current", wrong_success, 
+                         "Correctly rejected wrong current password" if wrong_success else f"Status: {response.status_code}")
+            
+            return success and wrong_success
+            
+        except Exception as e:
+            self.log_test("Password Change Functionality", False, str(e))
+            return False
+
     def test_health_check(self):
         """Test basic health check endpoint"""
         try:
