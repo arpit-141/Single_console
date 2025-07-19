@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Dict, Any
 
 class UnifiedSecurityConsoleAPITester:
-    def __init__(self, base_url="https://7bb2adb0-31af-4083-9206-07fbebae4a3f.preview.emergentagent.com"):
+    def __init__(self, base_url="https://940225cc-aa7b-4168-81a4-d021ca1c8bb0.preview.emergentagent.com"):
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
         self.headers = {
