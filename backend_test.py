@@ -314,7 +314,11 @@ class UnifiedSecurityConsoleAPITester:
         return success and specific_success
 
     def test_applications_crud(self):
-        """Test applications CRUD operations with app_type field"""
+        """Test applications CRUD operations with different templates"""
+        if not self.auth_token:
+            self.log_test("Applications CRUD", False, "No auth token available")
+            return False
+            
         # Test GET applications
         try:
             response = requests.get(f"{self.api_url}/applications", headers=self.headers, timeout=10)
@@ -326,18 +330,18 @@ class UnifiedSecurityConsoleAPITester:
             get_success = False
             apps_data = []
 
-        # Test POST application (create) with app_type
+        # Test POST application (create) with DefectDojo template
         test_app = {
-            "app_name": "Test DefectDojo App",
+            "app_name": "Test Security App",
             "app_type": "DefectDojo",
             "module": "XDR",
             "redirect_url": "https://example.com/test-app",
             "description": "Test DefectDojo application for API testing",
             "ip": "192.168.1.100",
-            "default_port": 8080,
-            "username": "testuser",
-            "password": "testpass123",
-            "api_key": "test-api-key-123"
+            "username": "securityadmin",
+            "password": "securepass123",
+            "api_key": "test-api-key-defectdojo-123",
+            "sync_roles": True
         }
         
         try:
@@ -347,26 +351,32 @@ class UnifiedSecurityConsoleAPITester:
             created_app = response.json() if post_success else {}
             app_id = created_app.get('id') if post_success else None
             
-            # Verify app_type was saved correctly
-            if post_success and created_app.get('app_type') == 'DefectDojo':
-                details = f"Created DefectDojo app with ID: {app_id}"
-            elif post_success:
-                details = f"Created app but app_type incorrect: {created_app.get('app_type')}"
-                post_success = False
-            else:
-                details = f"Status: {response.status_code}"
+            # Verify app_type and template defaults were applied
+            if post_success:
+                app_type = created_app.get('app_type')
+                default_port = created_app.get('default_port')
+                sync_roles = created_app.get('sync_roles')
                 
-            self.log_test("Create Application with App Type", post_success, details)
+                if app_type == 'DefectDojo' and default_port == 8080 and sync_roles:
+                    details = f"Created DefectDojo app with ID: {app_id}, port: {default_port}, sync_roles: {sync_roles}"
+                else:
+                    details = f"App created but template defaults not applied correctly: type={app_type}, port={default_port}, sync={sync_roles}"
+                    post_success = False
+            else:
+                details = f"Status: {response.status_code}, Response: {response.text}"
+                
+            self.log_test("Create Application with Template", post_success, details)
         except Exception as e:
-            self.log_test("Create Application with App Type", False, str(e))
+            self.log_test("Create Application with Template", False, str(e))
             post_success = False
             app_id = None
 
-        # Test PUT application (update) with app_type change
+        # Test PUT application (update) with different template
         if post_success and app_id:
             update_data = {
-                "description": "Updated test application description",
-                "app_type": "TheHive"
+                "description": "Updated security application description",
+                "app_type": "TheHive",
+                "sync_roles": False
             }
             try:
                 response = requests.put(f"{self.api_url}/applications/{app_id}", 
@@ -375,20 +385,23 @@ class UnifiedSecurityConsoleAPITester:
                 
                 if put_success:
                     updated_app = response.json()
-                    if updated_app.get('app_type') == 'TheHive':
-                        details = f"Updated app {app_id} to TheHive type"
+                    app_type = updated_app.get('app_type')
+                    sync_roles = updated_app.get('sync_roles')
+                    
+                    if app_type == 'TheHive' and not sync_roles:
+                        details = f"Updated app {app_id} to TheHive type, sync_roles: {sync_roles}"
                     else:
-                        details = f"App type not updated correctly: {updated_app.get('app_type')}"
+                        details = f"App not updated correctly: type={app_type}, sync={sync_roles}"
                         put_success = False
                 else:
                     details = f"Status: {response.status_code}"
                     
-                self.log_test("Update Application App Type", put_success, details)
+                self.log_test("Update Application Template", put_success, details)
             except Exception as e:
-                self.log_test("Update Application App Type", False, str(e))
+                self.log_test("Update Application Template", False, str(e))
                 put_success = False
         else:
-            self.log_test("Update Application App Type", False, "No app ID to update")
+            self.log_test("Update Application Template", False, "No app ID to update")
             put_success = False
 
         # Test DELETE application if we created one
