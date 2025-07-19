@@ -153,6 +153,7 @@ class AuthService:
                     "last_name": "Administrator",
                     "password_hash": self.get_password_hash("admin123"),
                     "is_admin": True,
+                    "is_active": True,
                     "roles": ["Admin"],
                     "module_access": ["XDR", "XDR+", "OXDR", "GSOS"],
                     "created_at": datetime.utcnow(),
