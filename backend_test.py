@@ -744,38 +744,61 @@ class UnifiedSecurityConsoleAPITester:
 
     def run_all_tests(self):
         """Run all API tests"""
-        print("🚀 Starting Unified Security Console API Tests")
-        print("=" * 60)
+        print("🚀 Starting Unified Security Console v2.0 API Tests")
+        print("=" * 70)
+        
+        # Test authentication configuration first
+        print("\n🔐 Authentication Configuration Tests:")
+        self.test_auth_config()
+        
+        # Test JWT authentication system
+        print("\n🔑 JWT Authentication System Tests:")
+        auth_success = self.test_login_authentication()
+        if not auth_success:
+            print("❌ Authentication failed - cannot proceed with protected endpoint tests")
+            print(f"📊 Test Summary: {self.tests_passed}/{self.tests_run} tests passed")
+            return 1
+        
+        # Test token validation
+        self.test_token_validation()
+        self.test_password_change()
         
         # Test basic functionality
         print("\n📋 Basic API Tests:")
         self.test_health_check()
         self.test_dashboard_stats()
         
-        # Test new app templates feature
-        print("\n🎯 New App Templates Feature Tests:")
+        # Test application templates system
+        print("\n🎯 Application Templates System Tests:")
         self.test_app_templates()
         
         # Test CRUD operations
-        print("\n📝 CRUD Operations Tests:")
+        print("\n📝 Application Management Tests:")
         self.test_applications_crud()
+        
+        # Test user management
+        print("\n👥 User & Role Management Tests:")
         self.test_users_crud()
         self.test_roles_crud()
         
+        # Test role synchronization framework
+        print("\n🔄 Role Synchronization Framework Tests:")
+        self.test_role_sync_framework()
+        
         # Test module-specific endpoints
-        print("\n🔧 Module-Specific Tests:")
+        print("\n🔧 Module-Based Access Control Tests:")
         self.test_applications_by_module()
         
-        # Test DefectDojo integration
-        print("\n🔗 DefectDojo Integration Tests:")
-        self.test_defectdojo_integration()
+        # Test production features
+        print("\n🛡️ Production-Ready Features Tests:")
+        self.test_production_features()
         
         # Print summary
-        print("\n" + "=" * 60)
+        print("\n" + "=" * 70)
         print(f"📊 Test Summary: {self.tests_passed}/{self.tests_run} tests passed")
         
         if self.tests_passed == self.tests_run:
-            print("🎉 All tests passed!")
+            print("🎉 All tests passed! Unified Security Console v2.0 is working correctly.")
             return 0
         else:
             print("⚠️  Some tests failed. Check the details above.")
