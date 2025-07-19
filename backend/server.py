@@ -1,141 +1,46 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Header
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
+from fastapi.security import HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
-import uuid
-from datetime import datetime
+from typing import List, Optional
 import requests
 from cryptography.fernet import Fernet
-import json
-import asyncio
-from enum import Enum
+from datetime import datetime
+
+# Import our custom modules
+from config import config, AuthType
+from auth import AuthService
+from models import *
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
-mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
-db = client[os.environ['DB_NAME']]
+client = AsyncIOMotorClient(config.mongo_url)
+db = client[config.db_name]
 
-# Create the main app without a prefix
-app = FastAPI(title="Unified Security Console", version="1.0.0")
+# Create the main app
+app = FastAPI(title="Unified Security Console", version="2.0.0")
 
 # Create a router with the /api prefix
 api_router = APIRouter(prefix="/api")
 
-# Security
-security = HTTPBearer()
-ENCRYPTION_KEY = os.environ.get('ENCRYPTION_KEY', Fernet.generate_key())
-cipher_suite = Fernet(ENCRYPTION_KEY)
+# Initialize Auth Service
+auth_service = AuthService(db)
 
-# DefectDojo Configuration
-DEFECTDOJO_URL = os.environ.get('DEFECTDOJO_URL', 'https://demo.defectdojo.org')
-DEFECTDOJO_API_KEY = os.environ.get('DEFECTDOJO_API_KEY', '548afd6fab3bea9794a41b31da0e9404f733e222')
+# Encryption setup
+cipher_suite = Fernet(config.encryption_key.encode())
 
-# Models
-class ModuleType(str, Enum):
-    XDR = "XDR"
-    XDR_PLUS = "XDR+"
-    OXDR = "OXDR"
-    GSOS = "GSOS"
-
-class AppType(str, Enum):
-    DEFECTDOJO = "DefectDojo"
-    THEHIVE = "TheHive"
-    OPENSEARCH = "OpenSearch"
-    WAZUH = "Wazuh"
-    SURICATA = "Suricata"
-    ELASTIC = "Elastic"
-    SPLUNK = "Splunk"
-    MISP = "MISP"
-    CORTEX = "Cortex"
-    CUSTOM = "Custom"
-
-class Application(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    app_name: str
-    app_type: AppType
-    module: ModuleType
-    redirect_url: str
-    ip: Optional[str] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    api_key: Optional[str] = None
-    description: Optional[str] = None
-    default_port: Optional[int] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-class ApplicationCreate(BaseModel):
-    app_name: str
-    app_type: AppType
-    module: ModuleType
-    redirect_url: str
-    ip: Optional[str] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    api_key: Optional[str] = None
-    description: Optional[str] = None
-    default_port: Optional[int] = None
-
-class ApplicationUpdate(BaseModel):
-    app_name: Optional[str] = None
-    app_type: Optional[AppType] = None
-    module: Optional[ModuleType] = None
-    redirect_url: Optional[str] = None
-    ip: Optional[str] = None
-    username: Optional[str] = None
-    password: Optional[str] = None
-    api_key: Optional[str] = None
-    description: Optional[str] = None
-    default_port: Optional[int] = None
-
-class User(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    username: str
-    email: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    roles: List[str] = []
-    module_access: List[ModuleType] = []
-    is_admin: bool = False
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-
-class UserCreate(BaseModel):
-    username: str
-    email: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    roles: List[str] = []
-    module_access: List[ModuleType] = []
-    is_admin: bool = False
-
-class Role(BaseModel):
-    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    name: str
-    description: Optional[str] = None
-    permissions: List[str] = []
-    defectdojo_id: Optional[int] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-
-class DefectDojoUser(BaseModel):
-    username: str
-    email: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-
-class DefectDojoRole(BaseModel):
-    user_id: str
-    role_id: int
-    product_id: Optional[int] = None
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Application Templates
 APP_TEMPLATES = {
@@ -144,175 +49,196 @@ APP_TEMPLATES = {
         "default_port": 8080,
         "description": "Open source vulnerability management tool",
         "auth_type": "api_key",
-        "api_endpoints": ["/api/v2/users/", "/api/v2/roles/", "/api/v2/findings/"]
+        "api_endpoints": ["/api/v2/users/", "/api/v2/roles/", "/api/v2/findings/"],
+        "supports_role_sync": True,
+        "role_sync_endpoint": "/api/v2/roles/"
     },
     AppType.THEHIVE: {
         "name": "TheHive",
         "default_port": 9000,
         "description": "Security incident response platform",
         "auth_type": "api_key",
-        "api_endpoints": ["/api/user", "/api/case", "/api/alert"]
+        "api_endpoints": ["/api/user", "/api/case", "/api/alert"],
+        "supports_role_sync": False,
+        "role_sync_endpoint": None
     },
     AppType.OPENSEARCH: {
         "name": "OpenSearch",
         "default_port": 9200,
         "description": "Distributed search and analytics engine",
         "auth_type": "basic",
-        "api_endpoints": ["/_security/user", "/_security/role", "/_cluster/health"]
+        "api_endpoints": ["/_security/user", "/_security/role", "/_cluster/health"],
+        "supports_role_sync": True,
+        "role_sync_endpoint": "/_security/role"
     },
     AppType.WAZUH: {
         "name": "Wazuh",
         "default_port": 55000,
         "description": "Open source security monitoring",
         "auth_type": "basic",
-        "api_endpoints": ["/security/users", "/security/roles", "/agents"]
+        "api_endpoints": ["/security/users", "/security/roles", "/agents"],
+        "supports_role_sync": True,
+        "role_sync_endpoint": "/security/roles"
     },
     AppType.SURICATA: {
         "name": "Suricata",
         "default_port": 8080,
         "description": "Network threat detection engine",
         "auth_type": "none",
-        "api_endpoints": ["/rules", "/alerts", "/stats"]
+        "api_endpoints": ["/rules", "/alerts", "/stats"],
+        "supports_role_sync": False,
+        "role_sync_endpoint": None
     },
     AppType.ELASTIC: {
         "name": "Elastic",
         "default_port": 9200,
         "description": "Elasticsearch cluster",
         "auth_type": "basic",
-        "api_endpoints": ["/_security/user", "/_security/role", "/_cluster/health"]
+        "api_endpoints": ["/_security/user", "/_security/role", "/_cluster/health"],
+        "supports_role_sync": True,
+        "role_sync_endpoint": "/_security/role"
     },
     AppType.SPLUNK: {
         "name": "Splunk",
         "default_port": 8089,
         "description": "Data platform for security monitoring",
         "auth_type": "basic",
-        "api_endpoints": ["/services/authentication/users", "/services/authorization/roles"]
+        "api_endpoints": ["/services/authentication/users", "/services/authorization/roles"],
+        "supports_role_sync": True,
+        "role_sync_endpoint": "/services/authorization/roles"
     },
     AppType.MISP: {
         "name": "MISP",
         "default_port": 443,
         "description": "Malware information sharing platform",
         "auth_type": "api_key",
-        "api_endpoints": ["/users", "/roles", "/events"]
+        "api_endpoints": ["/users", "/roles", "/events"],
+        "supports_role_sync": False,
+        "role_sync_endpoint": None
     },
     AppType.CORTEX: {
         "name": "Cortex",
         "default_port": 9001,
         "description": "Observable analysis and response engine",
         "auth_type": "api_key",
-        "api_endpoints": ["/api/user", "/api/analyzer", "/api/job"]
+        "api_endpoints": ["/api/user", "/api/analyzer", "/api/job"],
+        "supports_role_sync": False,
+        "role_sync_endpoint": None
     },
     AppType.CUSTOM: {
         "name": "Custom Application",
         "default_port": 8080,
         "description": "Custom security application",
         "auth_type": "custom",
-        "api_endpoints": []
+        "api_endpoints": [],
+        "supports_role_sync": False,
+        "role_sync_endpoint": None
     }
 }
+
+# Utility Functions
 def encrypt_data(data: str) -> str:
     """Encrypt sensitive data"""
+    if not data:
+        return ""
     return cipher_suite.encrypt(data.encode()).decode()
 
 def decrypt_data(encrypted_data: str) -> str:
     """Decrypt sensitive data"""
-    return cipher_suite.decrypt(encrypted_data.encode()).decode()
+    if not encrypted_data:
+        return ""
+    try:
+        return cipher_suite.decrypt(encrypted_data.encode()).decode()
+    except:
+        return encrypted_data  # Return as is if decryption fails
 
-async def get_defectdojo_headers():
-    """Get headers for DefectDojo API requests"""
+# Override the auth dependency functions
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(auth_service.security)):
+    return await auth_service.get_current_user(credentials)
+
+async def require_admin(current_user: dict = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
+    return current_user
+
+# Authentication Routes
+@api_router.post("/auth/login", response_model=LoginResponse)
+async def login(login_request: LoginRequest):
+    """Authenticate user and return JWT token"""
+    user = await auth_service.authenticate_user(login_request.username, login_request.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    access_token = auth_service.create_access_token(data={"sub": user["username"]})
+    return LoginResponse(
+        access_token=access_token,
+        user=user
+    )
+
+@api_router.post("/auth/change-password")
+async def change_password(
+    password_request: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Change user password"""
+    # Verify current password
+    user_doc = await db.users.find_one({"username": current_user["username"]})
+    if not user_doc or not auth_service.verify_password(password_request.current_password, user_doc["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect"
+        )
+    
+    # Update password
+    new_password_hash = auth_service.get_password_hash(password_request.new_password)
+    await db.users.update_one(
+        {"username": current_user["username"]},
+        {"$set": {"password_hash": new_password_hash, "updated_at": datetime.utcnow()}}
+    )
+    
+    return {"message": "Password updated successfully"}
+
+@api_router.get("/auth/me", response_model=UserResponse)
+async def get_me(current_user: dict = Depends(get_current_user)):
+    """Get current user information"""
+    user_doc = await db.users.find_one({"username": current_user["username"]})
+    return UserResponse(**user_doc)
+
+@api_router.get("/auth/config")
+async def get_auth_config():
+    """Get authentication configuration"""
     return {
-        "Authorization": f"Token {DEFECTDOJO_API_KEY}",
-        "Content-Type": "application/json"
+        "auth_type": config.auth.auth_type,
+        "simple_auth_enabled": config.auth.simple_auth_enabled,
+        "keycloak_enabled": config.auth.keycloak_server_url is not None
     }
 
-# DefectDojo API Integration
-class DefectDojoService:
-    @staticmethod
-    async def get_users():
-        """Get all users from DefectDojo"""
-        headers = await get_defectdojo_headers()
-        try:
-            response = requests.get(f"{DEFECTDOJO_URL}/api/v2/users/", headers=headers)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logging.error(f"Error fetching DefectDojo users: {e}")
-            return {"results": []}
-
-    @staticmethod
-    async def create_user(user_data: DefectDojoUser):
-        """Create a user in DefectDojo"""
-        headers = await get_defectdojo_headers()
-        try:
-            response = requests.post(
-                f"{DEFECTDOJO_URL}/api/v2/users/",
-                json=user_data.dict(),
-                headers=headers
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logging.error(f"Error creating DefectDojo user: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to create user in DefectDojo: {str(e)}")
-
-    @staticmethod
-    async def get_roles():
-        """Get all roles from DefectDojo"""
-        headers = await get_defectdojo_headers()
-        try:
-            response = requests.get(f"{DEFECTDOJO_URL}/api/v2/roles/", headers=headers)
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logging.error(f"Error fetching DefectDojo roles: {e}")
-            return {"results": []}
-
-    @staticmethod
-    async def assign_role(user_id: int, role_data: DefectDojoRole):
-        """Assign a role to a user in DefectDojo"""
-        headers = await get_defectdojo_headers()
-        try:
-            # This would typically be a product membership or global role assignment
-            # For now, implementing as a placeholder
-            response = requests.post(
-                f"{DEFECTDOJO_URL}/api/v2/global_roles/",
-                json={"user": user_id, "role": role_data.role_id},
-                headers=headers
-            )
-            response.raise_for_status()
-            return response.json()
-        except Exception as e:
-            logging.error(f"Error assigning role in DefectDojo: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to assign role in DefectDojo: {str(e)}")
-
-# Authentication (simplified for MVP)
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Get current user from token (simplified implementation)"""
-    # For MVP, we'll use a simple token check
-    # In production, implement proper JWT validation
-    if credentials.credentials == "admin-token":
-        return {"username": "admin", "is_admin": True}
-    return {"username": "user", "is_admin": False}
-
 # Application Management Routes
-@api_router.get("/applications", response_model=List[Application])
+@api_router.get("/applications", response_model=List[ApplicationResponse])
 async def get_applications():
     """Get all applications"""
-    apps = await db.applications.find().to_list(1000)
-    return [Application(**app) for app in apps]
+    apps = await db.applications.find({"is_active": True}).to_list(1000)
+    return [ApplicationResponse(**app) for app in apps]
 
 @api_router.get("/applications/module/{module}")
 async def get_applications_by_module(module: ModuleType):
     """Get applications by module"""
-    apps = await db.applications.find({"module": module}).to_list(1000)
-    return [Application(**app) for app in apps]
+    apps = await db.applications.find({"module": module, "is_active": True}).to_list(1000)
+    return [ApplicationResponse(**app) for app in apps]
 
-@api_router.post("/applications", response_model=Application)
-async def create_application(app_data: ApplicationCreate, current_user: dict = Depends(get_current_user)):
+@api_router.post("/applications", response_model=ApplicationResponse)
+async def create_application(
+    app_data: ApplicationCreate, 
+    current_user: dict = Depends(require_admin)
+):
     """Create a new application"""
-    if not current_user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
     # Encrypt sensitive data
     app_dict = app_data.dict()
     if app_dict.get("password"):
@@ -320,16 +246,24 @@ async def create_application(app_data: ApplicationCreate, current_user: dict = D
     if app_dict.get("api_key"):
         app_dict["api_key"] = encrypt_data(app_dict["api_key"])
     
+    # Set template defaults if not provided
+    template = APP_TEMPLATES.get(app_data.app_type)
+    if template and not app_dict.get("default_port"):
+        app_dict["default_port"] = template["default_port"]
+    if template and not app_dict.get("description"):
+        app_dict["description"] = template["description"]
+    
     app_obj = Application(**app_dict)
     await db.applications.insert_one(app_obj.dict())
-    return app_obj
+    return ApplicationResponse(**app_obj.dict())
 
-@api_router.put("/applications/{app_id}", response_model=Application)
-async def update_application(app_id: str, app_data: ApplicationUpdate, current_user: dict = Depends(get_current_user)):
+@api_router.put("/applications/{app_id}", response_model=ApplicationResponse)
+async def update_application(
+    app_id: str, 
+    app_data: ApplicationUpdate, 
+    current_user: dict = Depends(require_admin)
+):
     """Update an application"""
-    if not current_user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
     # Get existing application
     existing_app = await db.applications.find_one({"id": app_id})
     if not existing_app:
@@ -346,16 +280,16 @@ async def update_application(app_id: str, app_data: ApplicationUpdate, current_u
     
     await db.applications.update_one({"id": app_id}, {"$set": update_data})
     updated_app = await db.applications.find_one({"id": app_id})
-    return Application(**updated_app)
+    return ApplicationResponse(**updated_app)
 
 @api_router.delete("/applications/{app_id}")
-async def delete_application(app_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_application(app_id: str, current_user: dict = Depends(require_admin)):
     """Delete an application"""
-    if not current_user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    result = await db.applications.delete_one({"id": app_id})
-    if result.deleted_count == 0:
+    result = await db.applications.update_one(
+        {"id": app_id}, 
+        {"$set": {"is_active": False, "updated_at": datetime.utcnow()}}
+    )
+    if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Application not found")
     return {"message": "Application deleted successfully"}
 
@@ -369,7 +303,8 @@ async def get_app_templates():
             "name": template["name"],
             "default_port": template["default_port"],
             "description": template["description"],
-            "auth_type": template["auth_type"]
+            "auth_type": template["auth_type"],
+            "supports_role_sync": template["supports_role_sync"]
         }
     return templates
 
@@ -381,112 +316,211 @@ async def get_app_template(app_type: AppType):
     return APP_TEMPLATES[app_type]
 
 # User Management Routes
-@api_router.get("/users", response_model=List[User])
-async def get_users():
+@api_router.get("/users", response_model=List[UserResponse])
+async def get_users(current_user: dict = Depends(get_current_user)):
     """Get all users"""
-    users = await db.users.find().to_list(1000)
-    return [User(**user) for user in users]
+    users = await db.users.find({"is_active": True}).to_list(1000)
+    return [UserResponse(**user) for user in users]
 
-@api_router.post("/users", response_model=User)
-async def create_user(user_data: UserCreate, current_user: dict = Depends(get_current_user)):
-    """Create a new user and sync with DefectDojo"""
-    if not current_user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Admin access required")
+@api_router.post("/users", response_model=UserResponse)
+async def create_user(user_data: UserCreate, current_user: dict = Depends(require_admin)):
+    """Create a new user"""
+    # Check if username already exists
+    existing_user = await db.users.find_one({"username": user_data.username})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already exists")
     
-    # Create user in DefectDojo first
-    dojo_user = DefectDojoUser(
-        username=user_data.username,
-        email=user_data.email,
-        first_name=user_data.first_name,
-        last_name=user_data.last_name
-    )
+    # Hash password
+    user_dict = user_data.dict()
+    user_dict["password_hash"] = auth_service.get_password_hash(user_data.password)
+    del user_dict["password"]  # Remove plain password
     
-    try:
-        dojo_response = await DefectDojoService.create_user(dojo_user)
-        logging.info(f"Created user in DefectDojo: {dojo_response}")
-    except Exception as e:
-        logging.error(f"Failed to create user in DefectDojo: {e}")
-        # Continue with local user creation even if DefectDojo fails
-    
-    # Create user locally
-    user_obj = User(**user_data.dict())
+    user_obj = User(**user_dict)
     await db.users.insert_one(user_obj.dict())
-    return user_obj
+    
+    # Try to sync with DefectDojo
+    if config.defectdojo_api_key:
+        try:
+            await sync_user_with_defectdojo(user_obj.dict())
+        except Exception as e:
+            logger.warning(f"Failed to sync user with DefectDojo: {e}")
+    
+    return UserResponse(**user_obj.dict())
 
-@api_router.get("/users/{user_id}", response_model=User)
-async def get_user(user_id: str):
+@api_router.get("/users/{user_id}", response_model=UserResponse)
+async def get_user(user_id: str, current_user: dict = Depends(get_current_user)):
     """Get a specific user"""
     user = await db.users.find_one({"id": user_id})
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    return User(**user)
+    return UserResponse(**user)
+
+@api_router.put("/users/{user_id}", response_model=UserResponse)
+async def update_user(
+    user_id: str, 
+    user_data: UserUpdate, 
+    current_user: dict = Depends(require_admin)
+):
+    """Update a user"""
+    update_data = user_data.dict(exclude_unset=True)
+    update_data["updated_at"] = datetime.utcnow()
+    
+    result = await db.users.update_one({"id": user_id}, {"$set": update_data})
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    updated_user = await db.users.find_one({"id": user_id})
+    return UserResponse(**updated_user)
 
 # Role Management Routes
-@api_router.get("/roles", response_model=List[Role])
+@api_router.get("/roles", response_model=List[RoleResponse])
 async def get_roles():
     """Get all roles"""
     roles = await db.roles.find().to_list(1000)
-    return [Role(**role) for role in roles]
+    return [RoleResponse(**role) for role in roles]
 
-@api_router.post("/roles", response_model=Role)
-async def create_role(role_data: Role, current_user: dict = Depends(get_current_user)):
+@api_router.post("/roles", response_model=RoleResponse)
+async def create_role(role_data: RoleCreate, current_user: dict = Depends(require_admin)):
     """Create a new role"""
-    if not current_user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Admin access required")
-    
-    await db.roles.insert_one(role_data.dict())
-    return role_data
+    role_obj = Role(**role_data.dict())
+    await db.roles.insert_one(role_obj.dict())
+    return RoleResponse(**role_obj.dict())
 
-# DefectDojo Integration Routes
-@api_router.get("/defectdojo/users")
-async def get_defectdojo_users():
-    """Get users from DefectDojo"""
-    return await DefectDojoService.get_users()
-
-@api_router.get("/defectdojo/roles")
-async def get_defectdojo_roles():
-    """Get roles from DefectDojo"""
-    return await DefectDojoService.get_roles()
-
-@api_router.post("/defectdojo/sync-roles")
-async def sync_defectdojo_roles(current_user: dict = Depends(get_current_user)):
-    """Sync roles from DefectDojo to local database"""
-    if not current_user.get("is_admin"):
-        raise HTTPException(status_code=403, detail="Admin access required")
+# Role Synchronization Routes
+@api_router.post("/applications/{app_id}/sync-roles", response_model=RoleSyncResponse)
+async def sync_application_roles(
+    app_id: str,
+    sync_request: Optional[RoleSyncRequest] = None,
+    current_user: dict = Depends(require_admin)
+):
+    """Sync roles from an application"""
+    app = await db.applications.find_one({"id": app_id})
+    if not app:
+        raise HTTPException(status_code=404, detail="Application not found")
     
-    dojo_roles = await DefectDojoService.get_roles()
-    synced_count = 0
+    app_type = app["app_type"]
+    template = APP_TEMPLATES.get(app_type)
     
-    for role in dojo_roles.get("results", []):
-        role_obj = Role(
-            name=role.get("name", "Unknown"),
-            description=f"DefectDojo role: {role.get('name')}",
-            defectdojo_id=role.get("id"),
-            permissions=["read", "write"]  # Default permissions
+    if not template or not template.get("supports_role_sync"):
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Role synchronization not supported for {app_type}"
+        )
+    
+    try:
+        if app_type == AppType.DEFECTDOJO:
+            synced_count = await sync_defectdojo_roles(app)
+        else:
+            # Placeholder for other app types
+            synced_count = 0
+            logger.info(f"Role sync for {app_type} not implemented yet")
+        
+        # Update last sync time
+        await db.applications.update_one(
+            {"id": app_id},
+            {"$set": {"last_role_sync": datetime.utcnow()}}
         )
         
-        # Update or insert role
-        await db.roles.update_one(
-            {"defectdojo_id": role.get("id")},
-            {"$set": role_obj.dict()},
-            upsert=True
+        return RoleSyncResponse(
+            app_id=app_id,
+            app_name=app["app_name"],
+            app_type=app_type,
+            synced_roles=synced_count,
+            success=True,
+            message=f"Successfully synced {synced_count} roles",
+            last_sync=datetime.utcnow()
         )
-        synced_count += 1
+        
+    except Exception as e:
+        logger.error(f"Error syncing roles for {app_id}: {e}")
+        return RoleSyncResponse(
+            app_id=app_id,
+            app_name=app["app_name"],
+            app_type=app_type,
+            synced_roles=0,
+            success=False,
+            message=f"Failed to sync roles: {str(e)}",
+            last_sync=datetime.utcnow()
+        )
+
+# Helper functions for external integrations
+async def sync_defectdojo_roles(app: dict) -> int:
+    """Sync roles from DefectDojo"""
+    headers = {
+        "Authorization": f"Token {decrypt_data(app.get('api_key', '')) or config.defectdojo_api_key}",
+        "Content-Type": "application/json"
+    }
     
-    return {"message": f"Synced {synced_count} roles from DefectDojo"}
+    try:
+        base_url = app.get("redirect_url", config.defectdojo_url).rstrip("/")
+        response = requests.get(f"{base_url}/api/v2/roles/", headers=headers)
+        response.raise_for_status()
+        
+        roles_data = response.json()
+        synced_count = 0
+        
+        for role in roles_data.get("results", []):
+            role_obj = Role(
+                name=f"DD_{role.get('name', 'Unknown')}",
+                description=f"DefectDojo role: {role.get('name')}",
+                permissions=["read", "write"],
+                app_type=AppType.DEFECTDOJO,
+                external_id=str(role.get("id")),
+                is_synced=True
+            )
+            
+            # Update or insert role
+            await db.roles.update_one(
+                {"external_id": str(role.get("id")), "app_type": AppType.DEFECTDOJO},
+                {"$set": role_obj.dict()},
+                upsert=True
+            )
+            synced_count += 1
+        
+        return synced_count
+        
+    except Exception as e:
+        logger.error(f"Error syncing DefectDojo roles: {e}")
+        raise
+
+async def sync_user_with_defectdojo(user: dict):
+    """Sync user with DefectDojo"""
+    headers = {
+        "Authorization": f"Token {config.defectdojo_api_key}",
+        "Content-Type": "application/json"
+    }
+    
+    user_data = {
+        "username": user["username"],
+        "email": user["email"],
+        "first_name": user.get("first_name", ""),
+        "last_name": user.get("last_name", "")
+    }
+    
+    try:
+        response = requests.post(
+            f"{config.defectdojo_url}/api/v2/users/",
+            json=user_data,
+            headers=headers
+        )
+        response.raise_for_status()
+        logger.info(f"Successfully synced user {user['username']} with DefectDojo")
+    except requests.exceptions.RequestException as e:
+        logger.warning(f"Failed to sync user with DefectDojo: {e}")
+        # Don't raise, as this is not critical
 
 # Dashboard Routes
 @api_router.get("/dashboard/stats")
 async def get_dashboard_stats():
     """Get dashboard statistics"""
-    app_count = await db.applications.count_documents({})
-    user_count = await db.users.count_documents({})
+    app_count = await db.applications.count_documents({"is_active": True})
+    user_count = await db.users.count_documents({"is_active": True})
     role_count = await db.roles.count_documents({})
     
     # Count applications by module
     module_stats = {}
     for module in ModuleType:
-        count = await db.applications.count_documents({"module": module})
+        count = await db.applications.count_documents({"module": module, "is_active": True})
         module_stats[module] = count
     
     return {
@@ -494,8 +528,9 @@ async def get_dashboard_stats():
         "total_users": user_count,
         "total_roles": role_count,
         "module_stats": module_stats,
-        "defectdojo_connected": True,  # Add actual health check
-        "last_sync": datetime.utcnow()
+        "defectdojo_connected": bool(config.defectdojo_api_key),
+        "last_sync": datetime.utcnow(),
+        "auth_type": config.auth.auth_type
     }
 
 # Health Check
@@ -505,7 +540,8 @@ async def health_check():
     return {
         "status": "healthy",
         "timestamp": datetime.utcnow(),
-        "version": "1.0.0"
+        "version": "2.0.0",
+        "auth_type": config.auth.auth_type
     }
 
 # Include the router in the main app
@@ -519,17 +555,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
-
 @app.on_event("startup")
 async def startup_event():
-    """Initialize database and sync roles"""
-    logger.info("Starting Unified Security Console...")
+    """Initialize database and create default data"""
+    logger.info("Starting Unified Security Console v2.0...")
+    
+    # Create default admin user
+    await auth_service.create_default_admin()
     
     # Initialize default roles if none exist
     role_count = await db.roles.count_documents({})
@@ -537,7 +569,9 @@ async def startup_event():
         default_roles = [
             Role(name="Admin", description="Full system access", permissions=["read", "write", "delete", "admin"]),
             Role(name="User", description="Basic user access", permissions=["read"]),
-            Role(name="Viewer", description="Read-only access", permissions=["read"])
+            Role(name="Viewer", description="Read-only access", permissions=["read"]),
+            Role(name="Security Analyst", description="Security operations access", permissions=["read", "write"]),
+            Role(name="SOC Manager", description="SOC team management access", permissions=["read", "write", "manage_users"])
         ]
         
         for role in default_roles:
@@ -545,12 +579,23 @@ async def startup_event():
         
         logger.info("Initialized default roles")
     
-    # Sync DefectDojo roles
-    try:
-        await sync_defectdojo_roles({"is_admin": True})
-        logger.info("Synced DefectDojo roles on startup")
-    except Exception as e:
-        logger.error(f"Failed to sync DefectDojo roles on startup: {e}")
+    # Create sample DefectDojo application if none exists
+    app_count = await db.applications.count_documents({"app_type": AppType.DEFECTDOJO})
+    if app_count == 0:
+        sample_app = Application(
+            app_name="DefectDojo Demo",
+            app_type=AppType.DEFECTDOJO,
+            module=ModuleType.XDR,
+            redirect_url=config.defectdojo_url,
+            description="Demo DefectDojo instance for vulnerability management",
+            api_key=encrypt_data(config.defectdojo_api_key),
+            default_port=8080,
+            sync_roles=True
+        )
+        await db.applications.insert_one(sample_app.dict())
+        logger.info("Created sample DefectDojo application")
+    
+    logger.info(f"Authentication mode: {config.auth.auth_type}")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
