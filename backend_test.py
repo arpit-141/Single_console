@@ -11,9 +11,9 @@ class UnifiedSecurityConsoleAPITester:
         self.base_url = base_url
         self.api_url = f"{base_url}/api"
         self.headers = {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer admin-token'
+            'Content-Type': 'application/json'
         }
+        self.auth_token = None
         self.tests_run = 0
         self.tests_passed = 0
         self.test_results = []
