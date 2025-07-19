@@ -7,8 +7,8 @@ from typing import Optional
 import logging
 from motor.motor_asyncio import AsyncIOMotorDatabase
 
-from .config import config, AuthType
-from .models import User
+from config import config, AuthType
+from models import User
 
 logger = logging.getLogger(__name__)
 
