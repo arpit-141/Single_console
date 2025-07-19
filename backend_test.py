@@ -422,25 +422,39 @@ class UnifiedSecurityConsoleAPITester:
         return get_success and post_success and put_success and delete_success
 
     def test_users_crud(self):
-        """Test users CRUD operations"""
+        """Test users CRUD operations with module access control"""
+        if not self.auth_token:
+            self.log_test("Users CRUD", False, "No auth token available")
+            return False
+            
         # Test GET users
         try:
             response = requests.get(f"{self.api_url}/users", headers=self.headers, timeout=10)
             get_success = response.status_code == 200
             users_data = response.json() if get_success else []
-            self.log_test("Get Users", get_success, f"Found {len(users_data)} users")
+            
+            # Check if default admin user exists
+            admin_found = any(user.get('username') == 'admin' and user.get('is_admin') for user in users_data)
+            if admin_found:
+                details = f"Found {len(users_data)} users including default admin"
+            else:
+                details = f"Found {len(users_data)} users but no admin user"
+                get_success = False
+                
+            self.log_test("Get Users with Admin Check", get_success, details)
         except Exception as e:
-            self.log_test("Get Users", False, str(e))
+            self.log_test("Get Users with Admin Check", False, str(e))
             get_success = False
 
-        # Test POST user (create)
+        # Test POST user (create) with module access
         test_user = {
-            "username": f"testuser_{datetime.now().strftime('%H%M%S')}",
-            "email": f"test_{datetime.now().strftime('%H%M%S')}@example.com",
-            "first_name": "Test",
-            "last_name": "User",
-            "roles": ["User"],
-            "module_access": ["XDR"],
+            "username": f"securityanalyst_{datetime.now().strftime('%H%M%S')}",
+            "email": f"analyst_{datetime.now().strftime('%H%M%S')}@securityconsole.com",
+            "password": "SecurePass123!",
+            "first_name": "Security",
+            "last_name": "Analyst",
+            "roles": ["Security Analyst"],
+            "module_access": ["XDR", "XDR+"],
             "is_admin": False
         }
         
@@ -450,10 +464,21 @@ class UnifiedSecurityConsoleAPITester:
             post_success = response.status_code == 200
             created_user = response.json() if post_success else {}
             user_id = created_user.get('id') if post_success else None
-            self.log_test("Create User", post_success, 
-                         f"Created user with ID: {user_id}" if user_id else f"Status: {response.status_code}")
+            
+            if post_success:
+                module_access = created_user.get('module_access', [])
+                roles = created_user.get('roles', [])
+                if 'XDR' in module_access and 'Security Analyst' in roles:
+                    details = f"Created user with ID: {user_id}, modules: {module_access}, roles: {roles}"
+                else:
+                    details = f"User created but module access or roles incorrect: modules={module_access}, roles={roles}"
+                    post_success = False
+            else:
+                details = f"Status: {response.status_code}, Response: {response.text}"
+                
+            self.log_test("Create User with Module Access", post_success, details)
         except Exception as e:
-            self.log_test("Create User", False, str(e))
+            self.log_test("Create User with Module Access", False, str(e))
             post_success = False
             user_id = None
 
@@ -463,8 +488,16 @@ class UnifiedSecurityConsoleAPITester:
                 response = requests.get(f"{self.api_url}/users/{user_id}", 
                                       headers=self.headers, timeout=10)
                 get_user_success = response.status_code == 200
-                self.log_test("Get Specific User", get_user_success, 
-                             f"Retrieved user {user_id}" if get_user_success else f"Status: {response.status_code}")
+                
+                if get_user_success:
+                    user_data = response.json()
+                    username = user_data.get('username')
+                    is_admin = user_data.get('is_admin')
+                    details = f"Retrieved user {username}, admin: {is_admin}"
+                else:
+                    details = f"Status: {response.status_code}"
+                    
+                self.log_test("Get Specific User", get_user_success, details)
             except Exception as e:
                 self.log_test("Get Specific User", False, str(e))
                 get_user_success = False
