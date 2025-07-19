@@ -270,7 +270,7 @@ class UnifiedSecurityConsoleAPITester:
             if success:
                 templates = response.json()
                 expected_types = ["DefectDojo", "TheHive", "OpenSearch", "Wazuh", "Suricata", 
-                                "Elastic", "Splunk", "MISP", "Cortex", "Custom"]
+                                "Elastic", "Splunk", "MISP", "Cortex", "Custom Application"]
                 
                 found_types = [template_data.get('name') for template_data in templates.values()]
                 missing_types = [t for t in expected_types if t not in found_types]
