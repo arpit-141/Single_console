@@ -642,7 +642,11 @@ class UnifiedSecurityConsoleAPITester:
             return False
 
     def test_applications_by_module(self):
-        """Test getting applications by module"""
+        """Test getting applications by module with access control"""
+        if not self.auth_token:
+            self.log_test("Applications by Module", False, "No auth token available")
+            return False
+            
         modules = ["XDR", "XDR+", "OXDR", "GSOS"]
         all_success = True
         
@@ -653,7 +657,13 @@ class UnifiedSecurityConsoleAPITester:
                 success = response.status_code == 200
                 if success:
                     apps = response.json()
-                    details = f"Found {len(apps)} applications for {module}"
+                    # Verify all returned apps have the correct module
+                    correct_module = all(app.get('module') == module for app in apps)
+                    if correct_module:
+                        details = f"Found {len(apps)} applications for {module}, all correctly filtered"
+                    else:
+                        details = f"Found {len(apps)} applications but some have wrong module"
+                        success = False
                 else:
                     details = f"Status code: {response.status_code}"
                 self.log_test(f"Get {module} Applications", success, details)
@@ -663,6 +673,74 @@ class UnifiedSecurityConsoleAPITester:
                 all_success = False
         
         return all_success
+
+    def test_production_features(self):
+        """Test production-ready features like encryption and error handling"""
+        if not self.auth_token:
+            self.log_test("Production Features", False, "No auth token available")
+            return False
+            
+        # Test encrypted credential storage by creating app with sensitive data
+        test_app_with_creds = {
+            "app_name": "Test Encrypted Credentials",
+            "app_type": "DefectDojo",
+            "module": "XDR",
+            "redirect_url": "https://example.com/secure-app",
+            "description": "Test app for credential encryption",
+            "username": "secureuser",
+            "password": "supersecretpassword123",
+            "api_key": "very-secret-api-key-12345"
+        }
+        
+        try:
+            # Create app with credentials
+            response = requests.post(f"{self.api_url}/applications", 
+                                   json=test_app_with_creds, headers=self.headers, timeout=10)
+            create_success = response.status_code == 200
+            
+            if create_success:
+                created_app = response.json()
+                app_id = created_app.get('id')
+                
+                # Verify credentials are not returned in plain text (should be encrypted or omitted)
+                returned_password = created_app.get('password')
+                returned_api_key = created_app.get('api_key')
+                
+                # In a secure system, these should either be omitted or encrypted
+                if returned_password != "supersecretpassword123" and returned_api_key != "very-secret-api-key-12345":
+                    details = f"Credentials properly secured (not returned in plain text)"
+                    encryption_success = True
+                else:
+                    details = f"WARNING: Credentials returned in plain text"
+                    encryption_success = False
+                
+                # Clean up
+                requests.delete(f"{self.api_url}/applications/{app_id}", headers=self.headers)
+            else:
+                details = f"Could not create test app: {response.status_code}"
+                encryption_success = False
+                
+            self.log_test("Encrypted Credential Storage", encryption_success, details)
+            
+        except Exception as e:
+            self.log_test("Encrypted Credential Storage", False, str(e))
+            encryption_success = False
+        
+        # Test error handling with invalid requests
+        try:
+            # Test invalid JSON
+            invalid_response = requests.post(f"{self.api_url}/applications", 
+                                           data="invalid json", 
+                                           headers=self.headers, timeout=10)
+            error_handling_success = invalid_response.status_code in [400, 422]  # Should return proper error
+            
+            self.log_test("Error Handling for Invalid Data", error_handling_success, 
+                         f"Properly handled invalid data with status {invalid_response.status_code}" if error_handling_success else f"Status: {invalid_response.status_code}")
+        except Exception as e:
+            self.log_test("Error Handling for Invalid Data", False, str(e))
+            error_handling_success = False
+        
+        return encryption_success and error_handling_success
 
     def run_all_tests(self):
         """Run all API tests"""
