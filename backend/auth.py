@@ -21,6 +21,7 @@ security = HTTPBearer()
 class AuthService:
     def __init__(self, db: AsyncIOMotorDatabase):
         self.db = db
+        self.security = security  # Add security attribute
         
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a password against its hash"""
